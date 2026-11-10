@@ -1,0 +1,10 @@
+{
+  "name": "Move Lab",
+  "short_name": "Move Lab",
+  "description": "Décompose un mouvement image par image.",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#111214",
+  "theme_color": "#111214",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}
