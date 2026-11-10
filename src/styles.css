@@ -175,3 +175,11 @@ code { background: var(--panel-2); padding: 1px 5px; border-radius: 4px; font-si
   .speeds { width: 100%; }
   .keys { display: none; }
 }
+
+/* ---- squelette ---- */
+.overlay { pointer-events: none; }
+.pose-badge {
+  position: absolute; left: 8px; bottom: 8px; background: rgba(0, 0, 0, 0.65);
+  padding: 3px 9px; border-radius: 6px; font-size: 0.8em; pointer-events: none;
+}
+.angles { display: grid; gap: 1px; font-size: 0.78em; color: var(--dim); font-variant-numeric: tabular-nums; }

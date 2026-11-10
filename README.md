@@ -13,9 +13,10 @@
 - **Boucle A–B** sur le passage qui t'intéresse.
 - **Miroir** : pour travailler le mouvement de l'autre côté, ou se mettre face à la vidéo comme devant un prof.
 - **Zoom / déplacement** (molette ou pincement) pour regarder un appui ou une main.
-- **Décomposition** : ajoute une étape à chaque position clé, nomme-la (« appui main gauche », « impulsion », « réception »…), et **exporte une planche PNG** de toutes les positions.
+- **Squelette et angles** : détection automatique du corps (MediaPipe Pose) avec l'angle des genoux, hanches, coudes et épaules sur chaque image. Gauche du corps en orange, droite en bleu. Les corps à l'envers (ATR, aú, bananeira) sont aussi pris en charge.
+- **Décomposition** : ajoute une étape à chaque position clé, nomme-la (« appui main gauche », « impulsion », « réception »…), et **exporte une planche PNG** de toutes les positions, avec les angles si le squelette est actif.
 - Les étapes sont **sauvegardées dans ton navigateur** pour chaque fichier : en réimportant la même vidéo, tu retrouves ta décomposition.
-- **Tout reste sur ton appareil** : aucun fichier n'est envoyé sur un serveur.
+- **Tes vidéos restent sur ton appareil** : rien n'est envoyé sur un serveur. Seul le modèle de squelette (~10 Mo) est téléchargé, une fois, quand tu l'actives.
 
 ### Raccourcis clavier
 
@@ -31,6 +32,7 @@
 | S | ajouter une étape |
 | ↑ ↓ | étape précédente / suivante |
 | M | miroir |
+| P | squelette et angles |
 | 0 / double-clic | réinitialiser le zoom |
 
 ## Récupérer une vidéo Instagram / Pinterest
@@ -53,11 +55,12 @@ npm run dev      # http://localhost:5173
 npm run build    # vérifie les types et génère dist/
 ```
 
-Stack : [Vite](https://vite.dev) + React + TypeScript, [gifuct-js](https://github.com/matt-way/gifuct-js) pour décoder les GIF. Chaque push sur `main` déploie l'app sur GitHub Pages (`.github/workflows/deploy.yml`).
+Stack : [Vite](https://vite.dev) + React + TypeScript, [gifuct-js](https://github.com/matt-way/gifuct-js) pour décoder les GIF, [MediaPipe Pose Landmarker](https://ai.google.dev/edge/mediapipe/solutions/vision/pose_landmarker) pour le squelette. Chaque push sur `main` déploie l'app sur GitHub Pages (`.github/workflows/deploy.yml`).
 
 ## Idées pour la suite
 
-- Détection du squelette (pose estimation, ex. MediaPipe) pour suivre les angles des genoux, hanches, épaules.
+- Trajectoire d'une articulation sur tout le mouvement (ex. le chemin du pied pendant une meia-lua).
+- Choisir la personne suivie quand il y en a plusieurs à l'image.
 - Dessin par-dessus l'image (lignes d'appui, trajectoires).
 - Pelure d'oignon : superposer les images précédentes pour voir la trajectoire.
 - Comparaison côte à côte avec ta propre vidéo filmée.

@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { decodeGif, gifFrameAt, type DecodedGif } from './gif'
 import { exportSheet } from './sheet'
+import { computeAngles, detectPose, drawPose, formatAngles, loadPoseModel, type Angles, type Pose } from './pose'
+import type { PoseLandmarker } from '@mediapipe/tasks-vision'
 
 type Kind = 'video' | 'gif'
 
@@ -20,6 +22,8 @@ interface Step {
   t: number
   label: string
   thumb: string | null
+  /** angles des articulations au moment de l'étape (si le squelette était actif) */
+  angles?: Angles | null
 }
 
 interface Saved {
@@ -71,7 +75,13 @@ export default function App() {
   const [url, setUrl] = useState('')
   const [dragging, setDragging] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [poseOn, setPoseOn] = useState(false)
+  const [poseStatus, setPoseStatus] = useState<'idle' | 'loading' | 'ready'>('idle')
+  const [poseFound, setPoseFound] = useState(true)
 
+  const overlayRef = useRef<HTMLCanvasElement>(null)
+  const modelRef = useRef<PoseLandmarker | null>(null)
+  const poseRef = useRef<Pose | null>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
@@ -84,6 +94,8 @@ export default function App() {
   // valeurs lues par la boucle d'animation (évite les closures périmées)
   const live = useRef({ kind: 'video' as Kind, gif: undefined as DecodedGif | undefined, rate, dir, a, b, loopOn, duration })
   live.current = { ...live.current, kind: clip?.kind ?? 'video', gif: clip?.gif, rate, a, b, loopOn, duration }
+  const mirrorRef = useRef(mirror)
+  mirrorRef.current = mirror
 
   const lo = a ?? 0
   const hi = b ?? duration
@@ -300,6 +312,47 @@ export default function App() {
     }
   }
 
+  /* ---------- squelette ---------- */
+
+  /** Détecte et dessine le squelette sur l'image affichée. */
+  function runPose(): Pose | null {
+    const src = live.current.kind === 'gif' ? canvasRef.current : videoRef.current
+    const ov = overlayRef.current
+    const model = modelRef.current
+    if (!src || !ov || !model) return null
+    const w = src instanceof HTMLVideoElement ? src.videoWidth : src.width
+    const h = src instanceof HTMLVideoElement ? src.videoHeight : src.height
+    if (!w || !h) return null
+    if (ov.width !== w) ov.width = w
+    if (ov.height !== h) ov.height = h
+    const pose = detectPose(model, src, w, h)
+    poseRef.current = pose
+    setPoseFound(!!pose)
+    const ctx = ov.getContext('2d')!
+    if (pose) drawPose(ctx, pose, w, h, mirrorRef.current)
+    else ctx.clearRect(0, 0, w, h)
+    return pose
+  }
+
+  async function togglePose() {
+    if (poseOn) return setPoseOn(false)
+    if (clip?.tainted) {
+      setMsg('Le squelette n’est pas disponible pour une vidéo lue en direct depuis un autre site : importe le fichier.')
+      return
+    }
+    setPoseOn(true)
+    if (modelRef.current) return
+    setPoseStatus('loading')
+    try {
+      modelRef.current = await loadPoseModel()
+      setPoseStatus('ready')
+    } catch {
+      setPoseStatus('idle')
+      setPoseOn(false)
+      setMsg('Impossible de charger le modèle de détection (il faut une connexion internet la première fois).')
+    }
+  }
+
   /* ---------- étapes (décomposition) ---------- */
 
   function snapshot(): string | null {
@@ -317,6 +370,8 @@ export default function App() {
       ctx.scale(-1, 1)
     }
     ctx.drawImage(src, 0, 0, c.width, c.height)
+    // le squelette (son texte est déjà retourné en mode miroir)
+    if (poseOn && poseRef.current && overlayRef.current) ctx.drawImage(overlayRef.current, 0, 0, c.width, c.height)
     try {
       return c.toDataURL('image/jpeg', 0.8)
     } catch {
@@ -324,12 +379,26 @@ export default function App() {
     }
   }
 
-  function addStep() {
+  async function addStep() {
     if (!clip) return
     if (playing) pause()
+    // attendre que la vidéo affiche bien l'image demandée avant de la capturer
+    const v = videoRef.current
+    if (clip.kind === 'video' && v?.seeking) await new Promise((r) => v.addEventListener('seeked', r, { once: true }))
     const time = tRef.current
+    let angles: Angles | null = null
+    if (poseOn && modelRef.current) {
+      try {
+        const pose = runPose()
+        const ov = overlayRef.current!
+        if (pose) angles = computeAngles(pose, ov.width, ov.height)
+      } catch {
+        /* pas de squelette pour cette image */
+      }
+    }
+    const thumb = snapshot()
     setSteps((s) =>
-      [...s.filter((x) => Math.abs(x.t - time) > 1e-3), { id: uid(), t: time, label: '', thumb: snapshot() }].sort(
+      [...s.filter((x) => Math.abs(x.t - time) > 1e-3), { id: uid(), t: time, label: '', thumb, angles }].sort(
         (x, y) => x.t - y.t,
       ),
     )
@@ -367,6 +436,37 @@ export default function App() {
     gifIdxRef.current = -1
     drawGif(0)
   }, [clip])
+
+  // squelette : détection à chaque nouvelle image affichée
+  useEffect(() => {
+    if (!poseOn || poseStatus !== 'ready' || !clip) {
+      poseRef.current = null
+      return
+    }
+    let raf = 0
+    let lastKey = ''
+    const loop = () => {
+      raf = requestAnimationFrame(loop)
+      const v = videoRef.current
+      let key: string
+      if (live.current.kind === 'video') {
+        if (!v || v.readyState < 2 || v.seeking) return
+        key = v.currentTime.toFixed(4)
+      } else key = 'g' + gifIdxRef.current
+      key += mirror ? 'm' : ''
+      if (key === lastKey) return
+      lastKey = key
+      try {
+        runPose()
+      } catch {
+        cancelAnimationFrame(raf)
+        setPoseOn(false)
+        setMsg('La détection du squelette a échoué sur cette vidéo.')
+      }
+    }
+    raf = requestAnimationFrame(loop)
+    return () => cancelAnimationFrame(raf)
+  }, [poseOn, poseStatus, clip, mirror])
 
   // détection automatique des images/seconde pendant la lecture vidéo
   useEffect(() => {
@@ -412,6 +512,7 @@ export default function App() {
       else if (k === 'Escape') (setA(null), setB(null))
       else if (k === 'm') setMirror((m) => !m)
       else if (k === 's') addStep()
+      else if (k === 'p') togglePose()
       else if (k === '-') nudgeRate(-1)
       else if (k === '+' || k === '=') nudgeRate(1)
       else if (k === '0') (setZoom(1), setPan({ x: 0, y: 0 }))
@@ -607,7 +708,13 @@ export default function App() {
               ) : (
                 <canvas ref={canvasRef} className="media" style={{ transform }} />
               )}
+              {poseOn && <canvas ref={overlayRef} className="media overlay" style={{ transform }} />}
               {zoom > 1 && <div className="zoom-badge">×{zoom.toFixed(1)}</div>}
+              {poseOn && (poseStatus === 'loading' || !poseFound) && (
+                <div className="pose-badge">
+                  {poseStatus === 'loading' ? 'Chargement du modèle de squelette…' : 'Aucun corps détecté sur cette image'}
+                </div>
+              )}
             </div>
 
             <Timeline
@@ -685,6 +792,13 @@ export default function App() {
                 <button className={`btn ${mirror ? 'on' : ''}`} onClick={() => setMirror((m) => !m)} title="Miroir (M)">
                   ⇋ Miroir
                 </button>
+                <button
+                  className={`btn ${poseOn ? 'on' : ''}`}
+                  onClick={togglePose}
+                  title="Squelette et angles des articulations (P)"
+                >
+                  {poseStatus === 'loading' && poseOn ? 'Squelette…' : '◉ Squelette'}
+                </button>
                 {clip.kind === 'video' && (
                   <button className="btn" onClick={() => setMuted((m) => !m)} title="Son">
                     {muted ? 'Son coupé' : 'Son'}
@@ -761,6 +875,13 @@ export default function App() {
                             Supprimer
                           </button>
                         </div>
+                        {s.angles && (
+                          <div className="angles">
+                            {formatAngles(s.angles).map((line) => (
+                              <span key={line}>{line}</span>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </li>
                   )
@@ -773,7 +894,11 @@ export default function App() {
                 onClick={() =>
                   exportSheet(
                     clip.name,
-                    steps.map((s, i) => ({ ...s, label: s.label || `Étape ${i + 1}` })),
+                    steps.map((s, i) => ({
+                      ...s,
+                      label: s.label || `Étape ${i + 1}`,
+                      lines: s.angles ? formatAngles(s.angles) : [],
+                    })),
                   )
                 }
               >
@@ -792,6 +917,7 @@ export default function App() {
                 <dt>S</dt><dd>ajouter une étape</dd>
                 <dt>↑ ↓</dt><dd>étape précédente / suivante</dd>
                 <dt>M</dt><dd>miroir</dd>
+                <dt>P</dt><dd>squelette et angles</dd>
                 <dt>Molette</dt><dd>zoom (double-clic : réinitialiser)</dd>
               </dl>
             </details>
@@ -885,7 +1011,10 @@ function Welcome(props: {
             Ouvrir
           </button>
         </form>
-        <p className="privacy">Tout reste sur ton appareil : rien n’est envoyé sur un serveur.</p>
+        <p className="privacy">
+          Tes vidéos restent sur ton appareil : rien n’est envoyé sur un serveur. Seul le modèle de détection du
+          squelette est téléchargé, une fois, si tu l’actives.
+        </p>
       </div>
 
       <div className="tips">
