@@ -3,6 +3,7 @@ import { decodeGif, gifFrameAt, type DecodedGif } from './gif'
 import { exportSheet } from './sheet'
 import { computeAngles, detectPose, drawPose, formatAngles, loadPoseModel, type Angles, type Pose } from './pose'
 import type { PoseLandmarker } from '@mediapipe/tasks-vision'
+import { deleteClip, getClip, listClips, saveClip, updateClip, type LibEntry } from './library'
 
 type Kind = 'video' | 'gif'
 
@@ -15,6 +16,10 @@ interface Clip {
   gif?: DecodedGif
   /** vidéo chargée depuis une URL sans CORS : pas de capture d'image possible */
   tainted?: boolean
+  /** nom affiché (bibliothèque) */
+  title?: string
+  /** vidéo gardée dans la bibliothèque */
+  saved?: boolean
 }
 
 interface Step {
@@ -77,6 +82,11 @@ export default function App() {
   const [loading, setLoading] = useState(false)
   /** format de l'image (largeur / hauteur) pour ajuster la zone vidéo */
   const [aspect, setAspect] = useState<number | null>(null)
+  const [library, setLibrary] = useState<LibEntry[]>([])
+  const [scrubbing, setScrubbing] = useState(false)
+  const scrubbingRef = useRef(false)
+  const pendingSeek = useRef<number | null>(null)
+  const libThumbRef = useRef<string | null>(null)
   const [poseOn, setPoseOn] = useState(false)
   const [poseStatus, setPoseStatus] = useState<'idle' | 'loading' | 'ready'>('idle')
   const [poseFound, setPoseFound] = useState(true)
@@ -124,6 +134,30 @@ export default function App() {
       if (videoRef.current) videoRef.current.currentTime = nt
     } else drawGif(nt)
     setT(nt)
+  }
+
+  /** Déplacement continu (curseur ou glisser sur l'image) : on enchaîne les
+   *  recherches sans les empiler, pour que l'image suive le doigt. */
+  function scrubTo(time: number) {
+    const nt = clamp(time, 0, live.current.duration || 0)
+    tRef.current = nt
+    setT(nt)
+    if (live.current.kind === 'gif') return drawGif(nt)
+    const v = videoRef.current
+    if (!v) return
+    if (v.seeking) pendingSeek.current = nt
+    else v.currentTime = nt
+  }
+
+  function scrubStart() {
+    if (playing) pause()
+    scrubbingRef.current = true
+    setScrubbing(true)
+  }
+
+  function scrubEnd() {
+    scrubbingRef.current = false
+    setScrubbing(false)
   }
 
   function stopLoop() {
@@ -236,6 +270,39 @@ export default function App() {
 
   /* ---------- import ---------- */
 
+  function refreshLibrary() {
+    listClips()
+      .then(setLibrary)
+      .catch(() => {})
+  }
+
+  async function openFromLibrary(key: string) {
+    const e = await getClip(key).catch(() => undefined)
+    if (!e) return setMsg('Cette vidéo n’est plus dans ta bibliothèque.')
+    await importFile(new File([e.blob], e.name, { type: e.type }))
+  }
+
+  async function renameClip(key: string, current: string) {
+    const title = window.prompt('Nom du mouvement', current)?.trim()
+    if (!title) return
+    await updateClip(key, { title }).catch(() => {})
+    refreshLibrary()
+  }
+
+  async function removeClip(key: string, title: string) {
+    if (!window.confirm(`Supprimer « ${title} » et sa décomposition de cet appareil ?`)) return
+    await deleteClip(key).catch(() => {})
+    refreshLibrary()
+  }
+
+  function closeClip() {
+    pause()
+    if (clip?.url?.startsWith('blob:')) URL.revokeObjectURL(clip.url)
+    setClip(null)
+    setPoseOn(false)
+    refreshLibrary()
+  }
+
   async function importFile(file: File) {
     pause()
     setMsg(null)
@@ -252,6 +319,7 @@ export default function App() {
       try {
         const g = decodeGif(await file.arrayBuffer())
         openClip({ name: file.name, key, kind: 'gif', gif: g }, g.duration)
+        keep(file, key)
       } catch {
         setMsg('Impossible de lire ce GIF.')
       } finally {
@@ -259,7 +327,21 @@ export default function App() {
       }
     } else {
       openClip({ name: file.name, key, kind: 'video', url: URL.createObjectURL(file) }, 0)
+      keep(file, key)
     }
+  }
+
+  /** garde la vidéo dans la bibliothèque de l'appareil */
+  function keep(file: File, key: string) {
+    saveClip(file, key)
+      .then(() => getClip(key))
+      .then((e) => {
+        libThumbRef.current = e?.thumb ?? null
+        if (e) setClip((c) => (c && c.key === key ? { ...c, title: e.title, saved: true } : c))
+      })
+      .catch(() =>
+        setMsg('Pas assez de place pour garder cette vidéo sur l’appareil : ta décomposition est gardée, mais il faudra réimporter la vidéo.'),
+      )
   }
 
   function openClip(c: Clip, dur: number) {
@@ -431,6 +513,27 @@ export default function App() {
     }
   }, [clip, steps, a, b, fps, fpsAuto])
 
+  // vignette de la bibliothèque : la 1re étape si elle existe, sinon l'image d'ouverture
+  useEffect(() => {
+    if (!clip?.saved) return
+    const first = steps.find((s) => s.thumb)?.thumb ?? null
+    if (first && first !== libThumbRef.current) {
+      libThumbRef.current = first
+      updateClip(clip.key, { thumb: first }).catch(() => {})
+    } else if (!first && !libThumbRef.current && duration > 0) {
+      const id = setTimeout(() => {
+        const th = snapshot()
+        if (th) {
+          libThumbRef.current = th
+          updateClip(clip.key, { thumb: th }).catch(() => {})
+        }
+      }, 400)
+      return () => clearTimeout(id)
+    }
+  }, [clip, steps, duration])
+
+  useEffect(refreshLibrary, [])
+
   // première image du GIF
   useEffect(() => {
     if (clip?.kind !== 'gif' || !clip.gif || !canvasRef.current) return
@@ -450,6 +553,7 @@ export default function App() {
     let lastKey = ''
     const loop = () => {
       raf = requestAnimationFrame(loop)
+      if (scrubbingRef.current) return
       const v = videoRef.current
       let key: string
       if (live.current.kind === 'video') {
@@ -590,12 +694,19 @@ export default function App() {
   const pinch = useRef<{ d: number; z: number } | null>(null)
 
   const tap = useRef<{ x: number; y: number; at: number } | null>(null)
+  const drag = useRef<{ x: number; t: number; active: boolean } | null>(null)
 
   const onPointerDown = (e: React.PointerEvent) => {
-    ;(e.target as HTMLElement).setPointerCapture?.(e.pointerId)
+    try {
+      ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+    } catch {
+      /* rien */
+    }
     tap.current = pointers.current.size === 0 ? { x: e.clientX, y: e.clientY, at: performance.now() } : null
+    drag.current = pointers.current.size === 0 ? { x: e.clientX, t: tRef.current, active: false } : null
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
     if (pointers.current.size === 2) {
+      drag.current = null
       const [p, q] = [...pointers.current.values()]
       pinch.current = { d: Math.hypot(p.x - q.x, p.y - q.y), z: zoom }
     }
@@ -612,6 +723,23 @@ export default function App() {
       if (nz === 1) setPan({ x: 0, y: 0 })
     } else if (pointers.current.size === 1 && zoom > 1) {
       setPan((pp) => ({ x: pp.x + cur.x - prev.x, y: pp.y + cur.y - prev.y }))
+    } else if (pointers.current.size === 1 && drag.current) {
+      // glisser à gauche / à droite sur l'image = reculer / avancer dans le mouvement
+      const d = drag.current
+      const dx = cur.x - d.x
+      if (!d.active && Math.abs(dx) > 8) {
+        d.active = true
+        d.x = cur.x
+        d.t = playing ? (videoRef.current?.currentTime ?? tRef.current) : tRef.current
+        scrubStart()
+        return
+      }
+      if (d.active) {
+        const width = stageRef.current?.clientWidth || 300
+        // toute la largeur = la boucle A–B si elle existe, sinon 10 s max
+        const span = a !== null || b !== null ? hi - lo : Math.min(duration, 10)
+        scrubTo(d.t + ((mirror ? -dx : dx) / width) * span)
+      }
     }
   }
   const onPointerUp = (e: React.PointerEvent) => {
@@ -626,6 +754,8 @@ export default function App() {
     )
       playing ? pause() : play(1)
     tap.current = null
+    if (drag.current?.active) scrubEnd()
+    drag.current = null
     pointers.current.delete(e.pointerId)
     if (pointers.current.size < 2) pinch.current = null
   }
@@ -638,11 +768,28 @@ export default function App() {
   return (
     <div className={`app ${dragging ? 'dragging' : ''}`}>
       <header className="top">
-        <div className="brand">
-          <img src="./icon.svg" alt="" width={28} height={28} />
-          <span>Move Lab</span>
-        </div>
-        {clip && <div className="clip-name" title={clip.name}>{clip.name}</div>}
+        {clip ? (
+          <button className="btn ghost back" onClick={closeClip} aria-label="Retour à mes mouvements">
+            ‹ <span className="back-label">Mes mouvements</span>
+          </button>
+        ) : (
+          <div className="brand">
+            <img src="./icon.svg" alt="" width={28} height={28} />
+            <span>Move Lab</span>
+          </div>
+        )}
+        {clip && (
+          <button
+            className="clip-name"
+            title={clip.saved ? 'Renommer' : clip.name}
+            onClick={() => clip.saved && renameClip(clip.key, clip.title ?? clip.name).then(() =>
+              getClip(clip.key).then((e) => e && setClip((c) => (c && c.key === e.key ? { ...c, title: e.title } : c))),
+            )}
+          >
+            {clip.title ?? clip.name}
+            {clip.saved && <span className="saved"> · enregistré ✓</span>}
+          </button>
+        )}
         <div className="top-actions">
           <button className="btn primary" onClick={() => fileRef.current?.click()}>
             Importer
@@ -677,6 +824,10 @@ export default function App() {
           setUrl={setUrl}
           onPick={() => fileRef.current?.click()}
           onUrl={() => importUrl(url)}
+          library={library}
+          onOpen={openFromLibrary}
+          onRename={renameClip}
+          onDelete={removeClip}
         />
       ) : (
         <main className="lab">
@@ -720,6 +871,13 @@ export default function App() {
                       )
                     }
                   }}
+                  onSeeked={(e) => {
+                    const next = pendingSeek.current
+                    if (next !== null) {
+                      pendingSeek.current = null
+                      e.currentTarget.currentTime = next
+                    }
+                  }}
                   onError={() => setMsg('Impossible de lire cette vidéo dans ce navigateur.')}
                 />
               ) : (
@@ -737,6 +895,11 @@ export default function App() {
                   ×{zoom.toFixed(1)} · Réinitialiser
                 </button>
               )}
+              {scrubbing && (
+                <div className="scrub-badge">
+                  {fmt(t)} · image {Math.min(frameIndex + 1, frameCount)}
+                </div>
+              )}
               {poseOn && (poseStatus === 'loading' || !poseFound) && (
                 <div className="pose-badge">
                   {poseStatus === 'loading' ? 'Chargement du modèle de squelette…' : 'Aucun corps détecté sur cette image'}
@@ -751,7 +914,10 @@ export default function App() {
               b={b}
               steps={steps}
               pct={pct}
-              onSeek={(x) => {
+              onScrubStart={scrubStart}
+              onScrub={scrubTo}
+              onScrubEnd={scrubEnd}
+              onJump={(x) => {
                 if (playing) pause()
                 seek(x)
               }}
@@ -987,34 +1153,64 @@ function Timeline(props: {
   b: number | null
   steps: Step[]
   pct: (x: number) => number
-  onSeek: (t: number) => void
+  onScrubStart: () => void
+  onScrub: (t: number) => void
+  onScrubEnd: () => void
+  onJump: (t: number) => void
 }) {
-  const { duration, t, a, b, steps, pct, onSeek } = props
+  const { duration, t, a, b, steps, pct } = props
+  const ref = useRef<HTMLDivElement>(null)
+  const active = useRef(false)
   const left = pct(a ?? 0)
   const right = pct(b ?? duration)
+  const timeAt = (clientX: number) => {
+    const r = ref.current!.getBoundingClientRect()
+    return clamp((clientX - r.left) / r.width, 0, 1) * duration
+  }
+  const end = () => {
+    if (!active.current) return
+    active.current = false
+    props.onScrubEnd()
+  }
   return (
-    <div className="timeline">
+    <div
+      className="timeline"
+      ref={ref}
+      role="slider"
+      aria-label="Position"
+      aria-valuemin={0}
+      aria-valuemax={duration}
+      aria-valuenow={t}
+      onPointerDown={(e) => {
+        try {
+          ref.current!.setPointerCapture(e.pointerId)
+        } catch {
+          /* pas de capture possible : on suit quand même le doigt */
+        }
+        active.current = true
+        props.onScrubStart()
+        props.onScrub(timeAt(e.clientX))
+      }}
+      onPointerMove={(e) => {
+        if (active.current) props.onScrub(timeAt(e.clientX))
+      }}
+      onPointerUp={end}
+      onPointerCancel={end}
+    >
       <div className="track">
         {(a !== null || b !== null) && (
           <div className="loop-range" style={{ left: `${left}%`, width: `${Math.max(0, right - left)}%` }} />
         )}
         <div className="progress" style={{ width: `${pct(t)}%` }} />
       </div>
-      <input
-        type="range"
-        min={0}
-        max={duration || 0}
-        step={0.001}
-        value={t}
-        onChange={(e) => onSeek(Number(e.target.value))}
-        aria-label="Position"
-      />
+      <div className="handle" style={{ left: `${pct(t)}%` }} />
       {steps.map((s, i) => (
         <button
           key={s.id}
           className="marker"
           style={{ left: `${pct(s.t)}%` }}
-          onClick={() => onSeek(s.t)}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={() => props.onJump(s.t)}
           title={s.label || `Étape ${i + 1}`}
         >
           {i + 1}
@@ -1030,9 +1226,44 @@ function Welcome(props: {
   setUrl: (u: string) => void
   onPick: () => void
   onUrl: () => void
+  library: LibEntry[]
+  onOpen: (key: string) => void
+  onRename: (key: string, title: string) => void
+  onDelete: (key: string, title: string) => void
 }) {
+  const lib = props.library
   return (
     <main className="welcome">
+      {lib.length > 0 && (
+        <section className="library">
+          <h2>Mes mouvements</h2>
+          <ul>
+            {lib.map((e) => {
+              const n = loadSaved(e.key)?.steps.length ?? 0
+              return (
+                <li key={e.key}>
+                  <button className="lib-open" onClick={() => props.onOpen(e.key)}>
+                    {e.thumb ? <img src={e.thumb} alt="" /> : <span className="lib-empty" />}
+                    <span className="lib-title">{e.title}</span>
+                    <span className="lib-meta">
+                      {n ? `${n} étape${n > 1 ? 's' : ''}` : 'pas encore décomposé'} ·{' '}
+                      {new Date(e.updated).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
+                    </span>
+                  </button>
+                  <div className="lib-actions">
+                    <button className="link" onClick={() => props.onRename(e.key, e.title)}>
+                      Renommer
+                    </button>
+                    <button className="link" onClick={() => props.onDelete(e.key, e.title)}>
+                      Supprimer
+                    </button>
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+        </section>
+      )}
       <div className="hero">
         <h1>Décompose le mouvement.</h1>
         <p>
@@ -1061,8 +1292,8 @@ function Welcome(props: {
           </button>
         </form>
         <p className="privacy">
-          Tes vidéos restent sur ton appareil : rien n’est envoyé sur un serveur. Seul le modèle de détection du
-          squelette est téléchargé, une fois, si tu l’actives.
+          Tes vidéos et ta décomposition sont gardées sur cet appareil, rien n’est envoyé sur un serveur. Seul le
+          modèle de détection du squelette est téléchargé, une fois, si tu l’actives.
         </p>
       </div>
 

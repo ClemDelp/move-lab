@@ -33,7 +33,12 @@ code { background: var(--panel-2); padding: 1px 5px; border-radius: 4px; font-si
   position: sticky; top: 0; background: var(--bg); z-index: 5;
 }
 .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; letter-spacing: 0.01em; }
-.clip-name { flex: 1; min-width: 0; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 0.9em; }
+.clip-name {
+  flex: 1; min-width: 0; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-size: 0.95em; font-weight: 600; background: none; border: 0; text-align: left; padding: 0; cursor: pointer;
+}
+.clip-name .saved { color: var(--dim); font-weight: 400; font-size: 0.85em; }
+.btn.back { padding: 7px 10px; font-size: 1em; }
 .top-actions { margin-left: auto; }
 
 /* ---- boutons ---- */
@@ -111,17 +116,6 @@ code { background: var(--panel-2); padding: 1px 5px; border-radius: 4px; font-si
 }
 .timeline .progress { position: absolute; left: 0; top: 0; bottom: 0; background: #565a66; }
 .timeline .loop-range { position: absolute; top: 0; bottom: 0; background: rgba(255, 181, 71, 0.45); }
-.timeline input[type='range'] {
-  position: absolute; inset: 0; width: 100%; margin: 0; background: transparent;
-  -webkit-appearance: none; appearance: none; cursor: pointer;
-}
-.timeline input[type='range']::-webkit-slider-runnable-track { height: 44px; background: transparent; }
-.timeline input[type='range']::-webkit-slider-thumb {
-  -webkit-appearance: none; width: 8px; height: 36px; margin-top: 4px; border-radius: 4px; background: var(--text);
-  box-shadow: 0 0 0 2px var(--bg);
-}
-.timeline input[type='range']::-moz-range-track { background: transparent; }
-.timeline input[type='range']::-moz-range-thumb { width: 8px; height: 36px; border: 0; border-radius: 4px; background: var(--text); }
 .marker {
   position: absolute; top: -10px; transform: translateX(-50%); width: 22px; height: 22px;
   border-radius: 50%; border: 2px solid var(--bg); background: var(--accent); color: var(--accent-ink);
@@ -207,3 +201,28 @@ code { background: var(--panel-2); padding: 1px 5px; border-radius: 4px; font-si
   padding: 3px 9px; border-radius: 6px; font-size: 0.8em; pointer-events: none;
 }
 .angles { display: grid; gap: 1px; font-size: 0.78em; color: var(--dim); font-variant-numeric: tabular-nums; }
+
+/* ---- curseur (timeline) tactile ---- */
+.timeline { cursor: pointer; touch-action: none; user-select: none; }
+.timeline .handle {
+  position: absolute; top: 4px; width: 8px; height: 36px; transform: translateX(-50%);
+  border-radius: 4px; background: var(--text); box-shadow: 0 0 0 2px var(--bg); pointer-events: none;
+}
+.scrub-badge {
+  position: absolute; top: 8px; left: 50%; transform: translateX(-50%); background: rgba(0, 0, 0, 0.7);
+  padding: 4px 10px; border-radius: 8px; font-size: 0.9em; font-variant-numeric: tabular-nums; pointer-events: none;
+}
+
+/* ---- bibliothèque ---- */
+.library h2 { font-size: 1.15em; margin: 0 0 12px; }
+.library ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+.library li { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; }
+.lib-open { display: grid; gap: 2px; padding: 0 0 8px; background: none; border: 0; text-align: left; cursor: pointer; }
+.lib-open img, .lib-empty { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; background: #000; margin-bottom: 6px; }
+.lib-title { padding: 0 10px; font-weight: 600; font-size: 0.92em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lib-meta { padding: 0 10px; color: var(--dim); font-size: 0.78em; }
+.lib-actions { display: flex; justify-content: space-between; padding: 0 10px 10px; margin-top: auto; }
+@media (max-width: 900px) {
+  .back-label { display: none; }
+  .library ul { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+}

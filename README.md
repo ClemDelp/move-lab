@@ -15,14 +15,15 @@
 - **Zoom / déplacement** (molette ou pincement) pour regarder un appui ou une main.
 - **Squelette et angles** : détection automatique du corps (MediaPipe Pose) avec l'angle des genoux, hanches, coudes et épaules sur chaque image. Gauche du corps en orange, droite en bleu. Les corps à l'envers (ATR, aú, bananeira) sont aussi pris en charge.
 - **Décomposition** : ajoute une étape à chaque position clé, nomme-la (« appui main gauche », « impulsion », « réception »…), et **exporte une planche PNG** de toutes les positions, avec les angles si le squelette est actif.
-- Les étapes sont **sauvegardées dans ton navigateur** pour chaque fichier : en réimportant la même vidéo, tu retrouves ta décomposition.
+- **Mes mouvements** : chaque vidéo importée est gardée sur l'appareil (IndexedDB) avec sa décomposition (étapes, boucle A–B). Tu la retrouves sur l'écran d'accueil, tu peux la renommer ou la supprimer.
+- **Curseur en temps réel** : maintiens et glisse sur la barre de temps, la vidéo suit ton doigt image par image, en avant comme en arrière. Tu peux aussi glisser directement sur la vidéo (toute la largeur = la boucle A–B si elle existe, sinon 10 s).
 - **Tes vidéos restent sur ton appareil** : rien n'est envoyé sur un serveur. Seul le modèle de squelette (~10 Mo) est téléchargé, une fois, quand tu l'actives.
 
 ### Sur téléphone
 
-L'app est pensée d'abord pour le mobile : touche l'image pour lancer ou arrêter la lecture, pince pour zoomer, et le bouton « + Étape » reste toujours sous la vidéo. Le bouton de vitesse passe de 0,1× à 2× à chaque appui.
+L'app est pensée d'abord pour le mobile : touche l'image pour lancer ou arrêter la lecture, glisse dessus pour avancer ou reculer, pince pour zoomer, et le bouton « + Étape » reste toujours sous la vidéo. Le bouton de vitesse passe de 0,1× à 2× à chaque appui.
 
-Pour l'avoir comme une app : ouvre le lien dans Safari (iPhone) ou Chrome (Android), puis **Partager → Sur l'écran d'accueil**.
+Pour l'avoir comme une app : ouvre le lien dans Safari (iPhone) ou Chrome (Android), puis **Partager → Sur l'écran d'accueil**. Sur iPhone, c'est aussi ce qui protège ta bibliothèque : Safari peut effacer les données d'un site non utilisé pendant 7 jours, mais pas celles d'une app ajoutée à l'écran d'accueil.
 
 ### Raccourcis clavier
 
