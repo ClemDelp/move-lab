@@ -10,7 +10,8 @@
 - **Ralenti** de 0,1× à 2×.
 - **Image par image**, en avant comme en arrière.
 - **Lecture arrière** pour revoir le geste à l'envers.
-- **Boucle A–B** sur le passage qui t'intéresse.
+- **Boucle A–B** sur le passage qui t'intéresse : « A Début ici » et « Fin ici B » placent les bornes à l'image affichée, puis les drapeaux A et B se déplacent au doigt sur la barre de temps.
+- **Pas de son** : l'app est muette, quelle que soit la vidéo importée.
 - **Miroir** : pour travailler le mouvement de l'autre côté, ou se mettre face à la vidéo comme devant un prof.
 - **Zoom / déplacement** (molette ou pincement) pour regarder un appui ou une main.
 - **Squelette** : détection automatique du corps (MediaPipe Pose) sur chaque image. Gauche du corps en orange, droite en bleu. Les corps à l'envers (ATR, aú, bananeira) sont aussi pris en charge.
@@ -18,6 +19,8 @@
 - **Mes mouvements** : chaque vidéo importée est gardée sur l'appareil (IndexedDB) avec sa décomposition (étapes, boucle A–B). Tu la retrouves sur l'écran d'accueil, tu peux la renommer ou la supprimer.
 - **Curseur en temps réel** : maintiens et glisse sur la barre de temps, la vidéo suit ton doigt image par image, en avant comme en arrière. Tu peux aussi glisser directement sur la vidéo pour un réglage fin (environ une image tous les 6 px). À l'ouverture, l'app prépare les images en mémoire (la bande claire sur la barre de temps) : sur cette zone, le curseur et la lecture arrière sont parfaitement fluides. Avec une boucle A–B, c'est cette boucle qui est préparée.
 - **Tes vidéos restent sur ton appareil** : rien n'est envoyé sur un serveur. Seul le modèle de squelette (~10 Mo) est téléchargé, une fois, quand tu l'actives.
+
+- **Démo** : un bouton sur l'accueil ouvre une rondade + flic-flac pour essayer l'app sans rien importer (vidéo de [Wmagro sur Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Backhandspring.ogv), licence [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/deed.fr), convertie en MP4 sans le son).
 
 ### Sur téléphone
 

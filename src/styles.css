@@ -7,6 +7,8 @@
   --dim: #8b8d94;
   --accent: #ffb547;
   --accent-ink: #1a1203;
+  --loop: #6f9bff;
+  --loop-ink: #0b1430;
   --radius: 10px;
   color-scheme: dark;
   font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
@@ -84,6 +86,9 @@ code { background: var(--panel-2); padding: 1px 5px; border-radius: 4px; font-si
   flex: 1; min-width: 0; background: var(--panel); border: 1px solid var(--line);
   border-radius: 8px; padding: 8px 12px;
 }
+.demo { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 12px; }
+.demo-credit { color: var(--dim); font-size: 0.8em; }
+.demo-credit a { color: inherit; }
 .privacy { font-size: 0.85em; margin-top: 12px !important; }
 .tips { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; }
 .tips h2 { font-size: 1.05em; margin: 0 0 10px; }
@@ -109,14 +114,30 @@ code { background: var(--panel-2); padding: 1px 5px; border-radius: 4px; font-si
   padding: 6px 10px; border-radius: 8px; font-size: 0.85em; cursor: pointer; z-index: 2;
 }
 
-.timeline { position: relative; height: 44px; margin-top: 4px; }
+.timeline { position: relative; height: 62px; margin-top: 4px; }
 .timeline .track {
   position: absolute; left: 0; right: 0; top: 18px; height: 8px;
   background: var(--panel-2); border-radius: 4px; overflow: hidden;
 }
 .timeline .progress { position: absolute; left: 0; top: 0; bottom: 0; background: #565a66; }
 .timeline .cached { position: absolute; top: 0; bottom: 0; background: rgba(255, 255, 255, 0.13); }
-.timeline .loop-range { position: absolute; top: 0; bottom: 0; background: rgba(255, 181, 71, 0.45); }
+.timeline .loop-range { position: absolute; top: 0; bottom: 0; background: rgba(111, 155, 255, 0.55); }
+/* hors de la boucle : assombri */
+.timeline .outside { position: absolute; top: 14px; height: 16px; background: rgba(0, 0, 0, 0.55); border-radius: 4px; pointer-events: none; z-index: 1; }
+/* drapeaux A / B : trait sur la barre + étiquette dessous, à faire glisser */
+.ab-flag {
+  position: absolute; top: 10px; width: 32px; height: 52px; transform: translateX(-50%);
+  cursor: ew-resize; touch-action: none; z-index: 2;
+}
+.ab-flag::before {
+  content: ''; position: absolute; left: 50%; top: 0; height: 26px; width: 3px; transform: translateX(-50%);
+  background: var(--loop); border-radius: 2px;
+}
+.ab-pin {
+  position: absolute; left: 50%; top: 26px; transform: translateX(-50%);
+  min-width: 22px; height: 20px; padding: 0 5px; border-radius: 5px;
+  background: var(--loop); color: var(--loop-ink); font-size: 12px; font-weight: 800; line-height: 20px; text-align: center;
+}
 .marker {
   position: absolute; top: -10px; transform: translateX(-50%); width: 22px; height: 22px;
   border-radius: 50%; border: 2px solid var(--bg); background: var(--accent); color: var(--accent-ink);
@@ -129,6 +150,14 @@ code { background: var(--panel-2); padding: 1px 5px; border-radius: 4px; font-si
 .transport, .speeds, .tools { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .btn.icon { min-width: 48px; min-height: 44px; font-size: 1.05em; }
 .btn.play { min-width: 64px; }
+.btn.ab { display: inline-flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; }
+.ab-tag {
+  display: inline-grid; place-items: center; min-width: 20px; height: 20px; border-radius: 5px;
+  background: var(--panel-2); border: 1px solid var(--loop); color: var(--loop); font-size: 12px; font-weight: 800;
+}
+.btn.ab.set { border-color: var(--loop); }
+.btn.ab.set .ab-tag { background: var(--loop); color: var(--loop-ink); }
+.btn.loop.on { background: var(--loop); color: var(--loop-ink); border-color: var(--loop); }
 .btn.add { margin-left: auto; min-height: 44px; padding: 7px 16px; }
 .btn.speed { min-width: 64px; min-height: 44px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .sep { width: 1px; align-self: stretch; background: var(--line); margin: 4px 4px; }
@@ -206,8 +235,13 @@ code { background: var(--panel-2); padding: 1px 5px; border-radius: 4px; font-si
 /* ---- curseur (timeline) tactile ---- */
 .timeline { cursor: pointer; touch-action: none; user-select: none; }
 .timeline .handle {
-  position: absolute; top: 4px; width: 8px; height: 36px; transform: translateX(-50%);
-  border-radius: 4px; background: var(--text); box-shadow: 0 0 0 2px var(--bg); pointer-events: none;
+  position: absolute; top: 2px; width: 4px; height: 30px; transform: translateX(-50%);
+  background: #fff; box-shadow: 0 0 0 2px var(--bg), 0 0 10px rgba(255, 255, 255, 0.5); pointer-events: none; z-index: 3;
+}
+/* tête du curseur, bien visible au-dessus de la barre */
+.timeline .handle::before {
+  content: ''; position: absolute; left: 50%; top: -2px; width: 16px; height: 16px; transform: translateX(-50%);
+  border-radius: 50%; background: #fff; box-shadow: 0 0 0 2px var(--bg);
 }
 .scrub-badge {
   position: absolute; top: 8px; left: 50%; transform: translateX(-50%); background: rgba(0, 0, 0, 0.7);

@@ -40,6 +40,15 @@ interface Saved {
 const PX_PER_FRAME = 6
 const SPEEDS = [0.1, 0.25, 0.5, 0.75, 1, 1.5, 2]
 const VIDEO_EXT = /\.(mp4|m4v|mov|webm|ogv)$/i
+/** vidéo de démo livrée avec l'app (public/demo) */
+const DEMO = {
+  file: 'demo/rondade-flic-flac.mp4',
+  name: 'Rondade + flic-flac (démo).mp4',
+  credit: 'Wmagro',
+  source: 'https://commons.wikimedia.org/wiki/File:Backhandspring.ogv',
+  license: 'CC BY 3.0',
+  licenseUrl: 'https://creativecommons.org/licenses/by/3.0/deed.fr',
+}
 const SOCIAL = /(instagram\.com|pinterest\.|pin\.it|tiktok\.com|youtube\.com|youtu\.be|facebook\.com|fb\.watch|x\.com|twitter\.com)/i
 
 const fmt = (s: number) => {
@@ -74,7 +83,6 @@ export default function App() {
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const [fps, setFps] = useState(30)
   const [fpsAuto, setFpsAuto] = useState(true)
-  const [muted, setMuted] = useState(true)
   const [steps, setSteps] = useState<Step[]>([])
   const [msg, setMsg] = useState<string | null>(null)
   const [url, setUrl] = useState('')
@@ -446,6 +454,21 @@ export default function App() {
         setMsg('Vidéo lue en direct : ce site empêche les captures, les vignettes d’étapes seront vides.')
         setUrl('')
       }
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function openDemo() {
+    setLoading(true)
+    setMsg(null)
+    try {
+      const res = await fetch(DEMO.file)
+      if (!res.ok) throw new Error(String(res.status))
+      const blob = await res.blob()
+      await importFile(new File([blob], DEMO.name, { type: 'video/mp4' }))
+    } catch {
+      setMsg('Impossible de charger la vidéo de démo.')
     } finally {
       setLoading(false)
     }
@@ -903,6 +926,7 @@ export default function App() {
           setUrl={setUrl}
           onPick={() => fileRef.current?.click()}
           onUrl={() => importUrl(url)}
+          onDemo={openDemo}
           library={library}
           onOpen={openFromLibrary}
           onRename={renameClip}
@@ -927,8 +951,12 @@ export default function App() {
                   className="media"
                   src={clip.url}
                   style={{ transform }}
-                  muted={muted}
+                  muted
                   playsInline
+                  onVolumeChange={(e) => {
+                    // pas de son dans l'app, quoi qu'il arrive
+                    e.currentTarget.muted = true
+                  }}
                   preload="auto"
                   onLoadedMetadata={(e) => {
                     const v = e.currentTarget
@@ -998,6 +1026,8 @@ export default function App() {
               onScrubStart={scrubStart}
               onScrub={scrubTo}
               onScrubEnd={scrubEnd}
+              onSetA={setA}
+              onSetB={setB}
               onJump={(x) => {
                 if (playing) pause()
                 seek(x)
@@ -1058,18 +1088,32 @@ export default function App() {
               </div>
 
               <div className="tools">
-                <button className="btn" onClick={() => setA(tRef.current)} title="Début de boucle ([)">
-                  A
+                <button
+                  className={`btn ab ${a !== null ? 'set' : ''}`}
+                  onClick={() => setA(tRef.current)}
+                  title="Placer le début de la boucle à l’image actuelle ([)"
+                >
+                  <span className="ab-tag">A</span>
+                  {a !== null ? fmt(a) : 'Début ici'}
                 </button>
-                <button className="btn" onClick={() => setB(tRef.current)} title="Fin de boucle (])">
-                  B
+                <button
+                  className={`btn ab ${b !== null ? 'set' : ''}`}
+                  onClick={() => setB(tRef.current)}
+                  title="Placer la fin de la boucle à l’image actuelle (])"
+                >
+                  <span className="ab-tag">B</span>
+                  {b !== null ? fmt(b) : 'Fin ici'}
                 </button>
-                <button className={`btn ${loopOn ? 'on' : ''}`} onClick={() => setLoopOn((l) => !l)} title="Boucle">
-                  ⟲ Boucle
+                <button
+                  className={`btn loop ${loopOn ? 'on' : ''}`}
+                  onClick={() => setLoopOn((l) => !l)}
+                  title={a !== null || b !== null ? 'Répéter le passage A → B' : 'Répéter toute la vidéo'}
+                >
+                  ⟲ {loopOn ? 'Boucle' : 'Sans boucle'}
                 </button>
                 {(a !== null || b !== null) && (
-                  <button className="btn ghost" onClick={() => (setA(null), setB(null))} title="Effacer A–B (Échap)">
-                    Effacer A–B
+                  <button className="btn ghost" onClick={() => (setA(null), setB(null))} title="Effacer A et B (Échap)">
+                    × A–B
                   </button>
                 )}
                 <span className="sep" />
@@ -1095,11 +1139,6 @@ export default function App() {
                   </>
                 )}
                 <span className="sep" />
-                {clip.kind === 'video' && (
-                  <button className="btn" onClick={() => setMuted((m) => !m)} title="Son">
-                    {muted ? 'Son coupé' : 'Son'}
-                  </button>
-                )}
                 {clip.kind === 'video' && (
                   <label className="fps" title="Images par seconde (détectées automatiquement à la lecture)">
                     <select
@@ -1228,11 +1267,15 @@ function Timeline(props: {
   onScrubStart: () => void
   onScrub: (t: number) => void
   onScrubEnd: () => void
+  onSetA: (t: number) => void
+  onSetB: (t: number) => void
   onJump: (t: number) => void
 }) {
   const { duration, t, a, b, steps, pct } = props
   const ref = useRef<HTMLDivElement>(null)
   const active = useRef(false)
+  /** drapeau A ou B en cours de déplacement */
+  const dragging = useRef<'a' | 'b' | null>(null)
   const left = pct(a ?? 0)
   const right = pct(b ?? duration)
   const timeAt = (clientX: number) => {
@@ -1269,6 +1312,12 @@ function Timeline(props: {
       onPointerUp={end}
       onPointerCancel={end}
     >
+      {(a !== null || b !== null) && (
+        <>
+          <div className="outside" style={{ left: 0, width: `${left}%` }} />
+          <div className="outside" style={{ left: `${right}%`, right: 0 }} />
+        </>
+      )}
       <div className="track">
         {props.cached && (
           <div
@@ -1281,6 +1330,51 @@ function Timeline(props: {
         )}
         <div className="progress" style={{ width: `${pct(t)}%` }} />
       </div>
+      {(['a', 'b'] as const).map((k) => {
+        const v = k === 'a' ? a : b
+        if (v === null) return null
+        const set = k === 'a' ? props.onSetA : props.onSetB
+        const move = (clientX: number) => {
+          const x = timeAt(clientX)
+          set(x)
+          props.onScrub(x)
+        }
+        return (
+          <div
+            key={k}
+            className={`ab-flag ${k}`}
+            style={{ left: `${pct(v)}%` }}
+            title={k === 'a' ? 'Début de boucle : glisse pour ajuster' : 'Fin de boucle : glisse pour ajuster'}
+            onPointerDown={(e) => {
+              e.stopPropagation()
+              try {
+                e.currentTarget.setPointerCapture(e.pointerId)
+              } catch {
+                /* rien */
+              }
+              dragging.current = k
+              props.onScrubStart()
+              props.onScrub(v)
+            }}
+            onPointerMove={(e) => {
+              if (dragging.current === k) move(e.clientX)
+            }}
+            onPointerUp={(e) => {
+              e.stopPropagation()
+              if (dragging.current !== k) return
+              dragging.current = null
+              props.onScrubEnd()
+            }}
+            onPointerCancel={() => {
+              if (dragging.current !== k) return
+              dragging.current = null
+              props.onScrubEnd()
+            }}
+          >
+            <span className="ab-pin">{k.toUpperCase()}</span>
+          </div>
+        )
+      })}
       <div className="handle" style={{ left: `${pct(t)}%` }} />
       {steps.map((s, i) => (
         <button
@@ -1304,6 +1398,7 @@ function Welcome(props: {
   setUrl: (u: string) => void
   onPick: () => void
   onUrl: () => void
+  onDemo: () => void
   library: LibEntry[]
   onOpen: (key: string) => void
   onRename: (key: string, title: string) => void
@@ -1369,6 +1464,21 @@ function Welcome(props: {
             Ouvrir
           </button>
         </form>
+        <div className="demo">
+          <button className="btn" onClick={props.onDemo} disabled={props.loading}>
+            ▶ Essayer avec la démo : rondade + flic-flac
+          </button>
+          <span className="demo-credit">
+            Vidéo :{' '}
+            <a href={DEMO.source} target="_blank" rel="noreferrer">
+              {DEMO.credit}, Wikimedia Commons
+            </a>
+            ,{' '}
+            <a href={DEMO.licenseUrl} target="_blank" rel="noreferrer">
+              {DEMO.license}
+            </a>
+          </span>
+        </div>
         <p className="privacy">
           Tes vidéos et ta décomposition sont gardées sur cet appareil, rien n’est envoyé sur un serveur. Seul le
           modèle de détection du squelette est téléchargé, une fois, si tu l’actives.
