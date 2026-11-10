@@ -75,6 +75,8 @@ export default function App() {
   const [url, setUrl] = useState('')
   const [dragging, setDragging] = useState(false)
   const [loading, setLoading] = useState(false)
+  /** format de l'image (largeur / hauteur) pour ajuster la zone vidéo */
+  const [aspect, setAspect] = useState<number | null>(null)
   const [poseOn, setPoseOn] = useState(false)
   const [poseStatus, setPoseStatus] = useState<'idle' | 'loading' | 'ready'>('idle')
   const [poseFound, setPoseFound] = useState(true)
@@ -275,6 +277,7 @@ export default function App() {
     setFps(saved?.fps ?? 30)
     setZoom(1)
     setPan({ x: 0, y: 0 })
+    setAspect(c.gif ? c.gif.width / c.gif.height : null)
   }
 
   async function importUrl(raw: string) {
@@ -586,8 +589,11 @@ export default function App() {
   const pointers = useRef(new Map<number, { x: number; y: number }>())
   const pinch = useRef<{ d: number; z: number } | null>(null)
 
+  const tap = useRef<{ x: number; y: number; at: number } | null>(null)
+
   const onPointerDown = (e: React.PointerEvent) => {
     ;(e.target as HTMLElement).setPointerCapture?.(e.pointerId)
+    tap.current = pointers.current.size === 0 ? { x: e.clientX, y: e.clientY, at: performance.now() } : null
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
     if (pointers.current.size === 2) {
       const [p, q] = [...pointers.current.values()]
@@ -609,6 +615,17 @@ export default function App() {
     }
   }
   const onPointerUp = (e: React.PointerEvent) => {
+    // un appui bref sans glisser = lecture / pause
+    const t0 = tap.current
+    if (
+      e.type === 'pointerup' &&
+      t0 &&
+      pointers.current.size === 1 &&
+      performance.now() - t0.at < 300 &&
+      Math.hypot(e.clientX - t0.x, e.clientY - t0.y) < 10
+    )
+      playing ? pause() : play(1)
+    tap.current = null
     pointers.current.delete(e.pointerId)
     if (pointers.current.size < 2) pinch.current = null
   }
@@ -671,8 +688,7 @@ export default function App() {
               onPointerMove={onPointerMove}
               onPointerUp={onPointerUp}
               onPointerCancel={onPointerUp}
-              onDoubleClick={() => (setZoom(1), setPan({ x: 0, y: 0 }))}
-              style={{ cursor: zoom > 1 ? 'grab' : 'default' }}
+              style={{ cursor: zoom > 1 ? 'grab' : 'pointer', ...(aspect ? { height: 'auto', aspectRatio: String(aspect) } : {}) }}
             >
               {clip.kind === 'video' ? (
                 <video
@@ -686,6 +702,7 @@ export default function App() {
                   preload="auto"
                   onLoadedMetadata={(e) => {
                     const v = e.currentTarget
+                    if (v.videoWidth && v.videoHeight) setAspect(v.videoWidth / v.videoHeight)
                     if (Number.isFinite(v.duration)) {
                       setDuration(v.duration)
                       live.current.duration = v.duration
@@ -709,7 +726,17 @@ export default function App() {
                 <canvas ref={canvasRef} className="media" style={{ transform }} />
               )}
               {poseOn && <canvas ref={overlayRef} className="media overlay" style={{ transform }} />}
-              {zoom > 1 && <div className="zoom-badge">×{zoom.toFixed(1)}</div>}
+              {zoom > 1 && (
+                <button
+                  className="zoom-badge"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onPointerUp={(e) => e.stopPropagation()}
+                  onClick={() => (setZoom(1), setPan({ x: 0, y: 0 }))}
+                  title="Réinitialiser le zoom (0)"
+                >
+                  ×{zoom.toFixed(1)} · Réinitialiser
+                </button>
+              )}
               {poseOn && (poseStatus === 'loading' || !poseFound) && (
                 <div className="pose-badge">
                   {poseStatus === 'loading' ? 'Chargement du modèle de squelette…' : 'Aucun corps détecté sur cette image'}
@@ -740,30 +767,42 @@ export default function App() {
             </div>
 
             <div className="controls">
-              <div className="group transport">
-                <button className="btn" onClick={() => step(-1)} title="Image précédente (←)">
+              <div className="transport">
+                <button className="btn icon" onClick={() => step(-1)} title="Image précédente (←)" aria-label="Image précédente">
                   ◀︎|
                 </button>
                 <button
-                  className={`btn ${playing && dir === -1 ? 'on' : ''}`}
+                  className={`btn icon ${playing && dir === -1 ? 'on' : ''}`}
                   onClick={() => toggle(-1)}
                   title="Lecture arrière (J)"
+                  aria-label="Lecture arrière"
                 >
                   ◀︎
                 </button>
                 <button
-                  className={`btn big ${playing && dir === 1 ? 'on' : ''}`}
+                  className={`btn icon play ${playing && dir === 1 ? 'on' : ''}`}
                   onClick={() => (playing ? pause() : play(1))}
                   title="Lecture / pause (espace)"
+                  aria-label={playing ? 'Pause' : 'Lecture'}
                 >
                   {playing ? '❚❚' : '▶︎'}
                 </button>
-                <button className="btn" onClick={() => step(1)} title="Image suivante (→)">
+                <button className="btn icon" onClick={() => step(1)} title="Image suivante (→)" aria-label="Image suivante">
                   |▶︎
+                </button>
+                <button
+                  className="btn speed mobile-only"
+                  onClick={() => changeRate(SPEEDS[(SPEEDS.findIndex((x) => Math.abs(x - rate) < 1e-6) + 1) % SPEEDS.length])}
+                  aria-label="Changer la vitesse"
+                >
+                  {rate}×
+                </button>
+                <button className="btn primary add" onClick={addStep} title="Ajouter l’image actuelle comme étape (S)">
+                  + Étape
                 </button>
               </div>
 
-              <div className="group speeds" role="group" aria-label="Vitesse">
+              <div className="speeds desktop-only" role="group" aria-label="Vitesse">
                 {SPEEDS.map((s) => (
                   <button key={s} className={`chip ${Math.abs(rate - s) < 1e-6 ? 'on' : ''}`} onClick={() => changeRate(s)}>
                     {s}×
@@ -771,7 +810,7 @@ export default function App() {
                 ))}
               </div>
 
-              <div className="group">
+              <div className="tools">
                 <button className="btn" onClick={() => setA(tRef.current)} title="Début de boucle ([)">
                   A
                 </button>
@@ -786,9 +825,7 @@ export default function App() {
                     Effacer A–B
                   </button>
                 )}
-              </div>
-
-              <div className="group">
+                <span className="sep" />
                 <button className={`btn ${mirror ? 'on' : ''}`} onClick={() => setMirror((m) => !m)} title="Miroir (M)">
                   ⇋ Miroir
                 </button>
@@ -799,6 +836,18 @@ export default function App() {
                 >
                   {poseStatus === 'loading' && poseOn ? 'Squelette…' : '◉ Squelette'}
                 </button>
+                {steps.length > 0 && (
+                  <>
+                    <span className="sep" />
+                    <button className="btn" onClick={() => jumpStep(-1)} title="Étape précédente (↑)">
+                      ‹ Étape
+                    </button>
+                    <button className="btn" onClick={() => jumpStep(1)} title="Étape suivante (↓)">
+                      Étape ›
+                    </button>
+                  </>
+                )}
+                <span className="sep" />
                 {clip.kind === 'video' && (
                   <button className="btn" onClick={() => setMuted((m) => !m)} title="Son">
                     {muted ? 'Son coupé' : 'Son'}
@@ -832,13 +881,11 @@ export default function App() {
           <aside className="steps">
             <div className="steps-head">
               <h2>Décomposition</h2>
-              <button className="btn primary" onClick={addStep} title="Ajouter l’image actuelle comme étape (S)">
-                + Étape
-              </button>
+              {steps.length > 0 && <span className="dim">{steps.length} étape{steps.length > 1 ? 's' : ''}</span>}
             </div>
             {steps.length === 0 ? (
               <p className="hint">
-                Avance image par image et ajoute une étape à chaque position clé du mouvement (appui, impulsion,
+                Avance image par image et touche « + Étape » à chaque position clé du mouvement (appui, impulsion,
                 rotation, réception…). Tu obtiens une planche à étudier.
               </p>
             ) : (
@@ -918,7 +965,9 @@ export default function App() {
                 <dt>↑ ↓</dt><dd>étape précédente / suivante</dd>
                 <dt>M</dt><dd>miroir</dd>
                 <dt>P</dt><dd>squelette et angles</dd>
-                <dt>Molette</dt><dd>zoom (double-clic : réinitialiser)</dd>
+                <dt>Molette</dt><dd>zoom</dd>
+                <dt>0</dt><dd>réinitialiser le zoom</dd>
+                <dt>Clic sur l’image</dt><dd>lecture / pause</dd>
               </dl>
             </details>
           </aside>

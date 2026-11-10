@@ -20,6 +20,7 @@
 html, body, #root { margin: 0; height: 100%; }
 body { background: var(--bg); overscroll-behavior: none; }
 button, input, select { font: inherit; color: inherit; }
+button, select, .stage { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
 code { background: var(--panel-2); padding: 1px 5px; border-radius: 4px; font-size: 0.9em; }
 .dim { color: var(--dim); }
 
@@ -92,21 +93,21 @@ code { background: var(--panel-2); padding: 1px 5px; border-radius: 4px; font-si
 .player { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .stage {
   position: relative; background: #000; border-radius: var(--radius); overflow: hidden;
-  height: min(68vh, 720px); touch-action: none; user-select: none;
+  height: min(68vh, 720px); max-height: min(68vh, 720px); touch-action: none; user-select: none;
 }
 .media {
   position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain;
   transform-origin: center; image-rendering: auto;
 }
 .zoom-badge {
-  position: absolute; top: 8px; right: 8px; background: rgba(0, 0, 0, 0.6);
-  padding: 2px 8px; border-radius: 6px; font-size: 0.8em; pointer-events: none;
+  position: absolute; top: 8px; right: 8px; background: rgba(0, 0, 0, 0.7); border: 1px solid #444754;
+  padding: 6px 10px; border-radius: 8px; font-size: 0.85em; cursor: pointer; z-index: 2;
 }
 
-.timeline { position: relative; height: 34px; }
+.timeline { position: relative; height: 44px; margin-top: 4px; }
 .timeline .track {
-  position: absolute; left: 0; right: 0; top: 14px; height: 6px;
-  background: var(--panel-2); border-radius: 3px; overflow: hidden;
+  position: absolute; left: 0; right: 0; top: 18px; height: 8px;
+  background: var(--panel-2); border-radius: 4px; overflow: hidden;
 }
 .timeline .progress { position: absolute; left: 0; top: 0; bottom: 0; background: #565a66; }
 .timeline .loop-range { position: absolute; top: 0; bottom: 0; background: rgba(255, 181, 71, 0.45); }
@@ -114,22 +115,29 @@ code { background: var(--panel-2); padding: 1px 5px; border-radius: 4px; font-si
   position: absolute; inset: 0; width: 100%; margin: 0; background: transparent;
   -webkit-appearance: none; appearance: none; cursor: pointer;
 }
-.timeline input[type='range']::-webkit-slider-runnable-track { height: 34px; background: transparent; }
+.timeline input[type='range']::-webkit-slider-runnable-track { height: 44px; background: transparent; }
 .timeline input[type='range']::-webkit-slider-thumb {
-  -webkit-appearance: none; width: 4px; height: 26px; margin-top: 4px; border-radius: 2px; background: var(--text);
+  -webkit-appearance: none; width: 8px; height: 36px; margin-top: 4px; border-radius: 4px; background: var(--text);
+  box-shadow: 0 0 0 2px var(--bg);
 }
 .timeline input[type='range']::-moz-range-track { background: transparent; }
-.timeline input[type='range']::-moz-range-thumb { width: 4px; height: 26px; border: 0; border-radius: 2px; background: var(--text); }
+.timeline input[type='range']::-moz-range-thumb { width: 8px; height: 36px; border: 0; border-radius: 4px; background: var(--text); }
 .marker {
-  position: absolute; top: -6px; transform: translateX(-50%); width: 18px; height: 18px;
-  border-radius: 50%; border: 0; background: var(--accent); color: var(--accent-ink);
-  font-size: 10px; font-weight: 700; cursor: pointer; padding: 0; line-height: 18px;
+  position: absolute; top: -10px; transform: translateX(-50%); width: 22px; height: 22px;
+  border-radius: 50%; border: 2px solid var(--bg); background: var(--accent); color: var(--accent-ink);
+  font-size: 11px; font-weight: 700; cursor: pointer; padding: 0; line-height: 18px; z-index: 1;
 }
 
 .readout { display: flex; justify-content: space-between; font-variant-numeric: tabular-nums; font-size: 0.9em; }
 
-.controls { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
-.group { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.controls { display: flex; flex-direction: column; gap: 10px; }
+.transport, .speeds, .tools { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.btn.icon { min-width: 48px; min-height: 44px; font-size: 1.05em; }
+.btn.play { min-width: 64px; }
+.btn.add { margin-left: auto; min-height: 44px; padding: 7px 16px; }
+.btn.speed { min-width: 64px; min-height: 44px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.sep { width: 1px; align-self: stretch; background: var(--line); margin: 4px 4px; }
+.mobile-only { display: none; }
 .fps select { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 7px 8px; min-height: 38px; }
 
 /* ---- étapes ---- */
@@ -139,6 +147,7 @@ code { background: var(--panel-2); padding: 1px 5px; border-radius: 4px; font-si
 }
 .steps-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
 .steps-head h2 { font-size: 1em; margin: 0; }
+.steps-head .dim { font-size: 0.85em; }
 .hint { color: var(--dim); font-size: 0.9em; margin: 0; }
 .step-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 .step-list li { display: flex; gap: 10px; padding: 6px; border-radius: 8px; border: 1px solid transparent; }
@@ -169,11 +178,26 @@ code { background: var(--panel-2); padding: 1px 5px; border-radius: 4px; font-si
 
 /* ---- mobile ---- */
 @media (max-width: 900px) {
-  .lab { grid-template-columns: 1fr; padding: 10px; }
-  .stage { height: 52vh; }
+  .top { padding: 8px 12px; }
+  .lab { grid-template-columns: 1fr; padding: 8px 10px calc(16px + env(safe-area-inset-bottom)); gap: 12px; }
+  .stage { height: 50vh; height: 50svh; max-height: 50vh; max-height: 55svh; border-radius: 8px; }
+  .player { gap: 6px; }
   .steps { max-height: none; }
-  .speeds { width: 100%; }
-  .keys { display: none; }
+  .keys, .desktop-only { display: none; }
+  .mobile-only { display: inline-flex; align-items: center; justify-content: center; }
+  /* transport : 6 boutons sur une ligne, pleine largeur */
+  .transport { flex-wrap: nowrap; }
+  .transport .btn { flex: 1 1 0; min-width: 0; padding: 7px 4px; }
+  .transport .btn.add { flex: 1.6 1 0; margin-left: 0; }
+  /* outils : une ligne qui défile au doigt */
+  .tools {
+    flex-wrap: nowrap; overflow-x: auto; margin: 0 -10px; padding: 2px 10px 6px;
+    scrollbar-width: none; -webkit-overflow-scrolling: touch;
+  }
+  .tools::-webkit-scrollbar { display: none; }
+  .tools > * { flex: none; }
+  /* évite le zoom automatique d'iOS sur les champs */
+  input, select { font-size: 16px; }
 }
 
 /* ---- squelette ---- */

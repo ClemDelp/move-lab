@@ -18,6 +18,12 @@
 - Les étapes sont **sauvegardées dans ton navigateur** pour chaque fichier : en réimportant la même vidéo, tu retrouves ta décomposition.
 - **Tes vidéos restent sur ton appareil** : rien n'est envoyé sur un serveur. Seul le modèle de squelette (~10 Mo) est téléchargé, une fois, quand tu l'actives.
 
+### Sur téléphone
+
+L'app est pensée d'abord pour le mobile : touche l'image pour lancer ou arrêter la lecture, pince pour zoomer, et le bouton « + Étape » reste toujours sous la vidéo. Le bouton de vitesse passe de 0,1× à 2× à chaque appui.
+
+Pour l'avoir comme une app : ouvre le lien dans Safari (iPhone) ou Chrome (Android), puis **Partager → Sur l'écran d'accueil**.
+
 ### Raccourcis clavier
 
 | Touche | Action |
