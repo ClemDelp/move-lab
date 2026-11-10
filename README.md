@@ -13,10 +13,10 @@
 - **Boucle A–B** sur le passage qui t'intéresse.
 - **Miroir** : pour travailler le mouvement de l'autre côté, ou se mettre face à la vidéo comme devant un prof.
 - **Zoom / déplacement** (molette ou pincement) pour regarder un appui ou une main.
-- **Squelette et angles** : détection automatique du corps (MediaPipe Pose) avec l'angle des genoux, hanches, coudes et épaules sur chaque image. Gauche du corps en orange, droite en bleu. Les corps à l'envers (ATR, aú, bananeira) sont aussi pris en charge.
-- **Décomposition** : ajoute une étape à chaque position clé, nomme-la (« appui main gauche », « impulsion », « réception »…), et **exporte une planche PNG** de toutes les positions, avec les angles si le squelette est actif.
+- **Squelette** : détection automatique du corps (MediaPipe Pose) sur chaque image. Gauche du corps en orange, droite en bleu. Les corps à l'envers (ATR, aú, bananeira) sont aussi pris en charge.
+- **Décomposition** : ajoute une étape à chaque position clé, nomme-la (« appui main gauche », « impulsion », « réception »…), et **exporte une planche PNG** de toutes les positions (avec le squelette s'il est actif).
 - **Mes mouvements** : chaque vidéo importée est gardée sur l'appareil (IndexedDB) avec sa décomposition (étapes, boucle A–B). Tu la retrouves sur l'écran d'accueil, tu peux la renommer ou la supprimer.
-- **Curseur en temps réel** : maintiens et glisse sur la barre de temps, la vidéo suit ton doigt image par image, en avant comme en arrière. Tu peux aussi glisser directement sur la vidéo (toute la largeur = la boucle A–B si elle existe, sinon 10 s).
+- **Curseur en temps réel** : maintiens et glisse sur la barre de temps, la vidéo suit ton doigt image par image, en avant comme en arrière. Tu peux aussi glisser directement sur la vidéo pour un réglage fin (environ une image tous les 6 px). À l'ouverture, l'app prépare les images en mémoire (la bande claire sur la barre de temps) : sur cette zone, le curseur et la lecture arrière sont parfaitement fluides. Avec une boucle A–B, c'est cette boucle qui est préparée.
 - **Tes vidéos restent sur ton appareil** : rien n'est envoyé sur un serveur. Seul le modèle de squelette (~10 Mo) est téléchargé, une fois, quand tu l'actives.
 
 ### Sur téléphone
@@ -39,7 +39,7 @@ Pour l'avoir comme une app : ouvre le lien dans Safari (iPhone) ou Chrome (Andro
 | S | ajouter une étape |
 | ↑ ↓ | étape précédente / suivante |
 | M | miroir |
-| P | squelette et angles |
+| P | squelette |
 | 0 / double-clic | réinitialiser le zoom |
 
 ## Récupérer une vidéo Instagram / Pinterest

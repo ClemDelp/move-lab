@@ -2,8 +2,6 @@ export interface SheetStep {
   t: number
   label: string
   thumb: string | null
-  /** lignes d'angles (genou, hanche…) */
-  lines?: string[]
 }
 
 function loadImage(src: string): Promise<HTMLImageElement> {
@@ -24,8 +22,7 @@ export async function exportSheet(title: string, steps: SheetStep[]) {
   const cellW = 320
   const ratio = imgs[0].height / imgs[0].width
   const cellH = Math.round(cellW * ratio)
-  const maxLines = Math.max(0, ...withThumb.map((s) => s.lines?.length ?? 0))
-  const labelH = 52 + maxLines * 17
+  const labelH = 52
   const gap = 16
   const header = 64
   const cols = Math.min(4, imgs.length)
@@ -66,8 +63,6 @@ export async function exportSheet(title: string, steps: SheetStep[]) {
     ctx.fillStyle = '#8b8d94'
     ctx.font = '13px system-ui, sans-serif'
     ctx.fillText(`${s.t.toFixed(2)} s`, x, y + cellH + 41)
-    ctx.font = '12px system-ui, sans-serif'
-    s.lines?.forEach((line, k) => ctx.fillText(line, x, y + cellH + 60 + k * 17))
   })
 
   const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/png'))

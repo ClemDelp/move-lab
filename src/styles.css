@@ -115,6 +115,7 @@ code { background: var(--panel-2); padding: 1px 5px; border-radius: 4px; font-si
   background: var(--panel-2); border-radius: 4px; overflow: hidden;
 }
 .timeline .progress { position: absolute; left: 0; top: 0; bottom: 0; background: #565a66; }
+.timeline .cached { position: absolute; top: 0; bottom: 0; background: rgba(255, 255, 255, 0.13); }
 .timeline .loop-range { position: absolute; top: 0; bottom: 0; background: rgba(255, 181, 71, 0.45); }
 .marker {
   position: absolute; top: -10px; transform: translateX(-50%); width: 22px; height: 22px;
@@ -195,12 +196,12 @@ code { background: var(--panel-2); padding: 1px 5px; border-radius: 4px; font-si
 }
 
 /* ---- squelette ---- */
-.overlay { pointer-events: none; }
+.overlay, .layer { pointer-events: none; }
+.layer { visibility: hidden; }
 .pose-badge {
   position: absolute; left: 8px; bottom: 8px; background: rgba(0, 0, 0, 0.65);
   padding: 3px 9px; border-radius: 6px; font-size: 0.8em; pointer-events: none;
 }
-.angles { display: grid; gap: 1px; font-size: 0.78em; color: var(--dim); font-variant-numeric: tabular-nums; }
 
 /* ---- curseur (timeline) tactile ---- */
 .timeline { cursor: pointer; touch-action: none; user-select: none; }

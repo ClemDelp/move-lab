@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { decodeGif, gifFrameAt, type DecodedGif } from './gif'
 import { exportSheet } from './sheet'
-import { computeAngles, detectPose, drawPose, formatAngles, loadPoseModel, type Angles, type Pose } from './pose'
+import { detectPose, drawPose, loadPoseModel, type Pose } from './pose'
+import { FrameStore, type FrameProgress } from './frames'
 import type { PoseLandmarker } from '@mediapipe/tasks-vision'
 import { deleteClip, getClip, listClips, saveClip, updateClip, type LibEntry } from './library'
 
@@ -27,8 +28,6 @@ interface Step {
   t: number
   label: string
   thumb: string | null
-  /** angles des articulations au moment de l'étape (si le squelette était actif) */
-  angles?: Angles | null
 }
 
 interface Saved {
@@ -38,6 +37,7 @@ interface Saved {
   fps: number | null
 }
 
+const PX_PER_FRAME = 6
 const SPEEDS = [0.1, 0.25, 0.5, 0.75, 1, 1.5, 2]
 const VIDEO_EXT = /\.(mp4|m4v|mov|webm|ogv)$/i
 const SOCIAL = /(instagram\.com|pinterest\.|pin\.it|tiktok\.com|youtube\.com|youtu\.be|facebook\.com|fb\.watch|x\.com|twitter\.com)/i
@@ -86,6 +86,14 @@ export default function App() {
   const [scrubbing, setScrubbing] = useState(false)
   const scrubbingRef = useRef(false)
   const pendingSeek = useRef<number | null>(null)
+  /** images préparées pour le curseur fluide (vidéo uniquement) */
+  const framesRef = useRef<FrameStore | null>(null)
+  const [frameInfo, setFrameInfo] = useState<FrameProgress | null>(null)
+  /** recentre la préparation sur cet instant (longues vidéos sans boucle) */
+  const [frameFocus, setFrameFocus] = useState(0)
+  const layerRef = useRef<HTMLCanvasElement>(null)
+  const layerOn = useRef(false)
+  const hideOnSeeked = useRef(false)
   const libThumbRef = useRef<string | null>(null)
   const [poseOn, setPoseOn] = useState(false)
   const [poseStatus, setPoseStatus] = useState<'idle' | 'loading' | 'ready'>('idle')
@@ -106,8 +114,6 @@ export default function App() {
   // valeurs lues par la boucle d'animation (évite les closures périmées)
   const live = useRef({ kind: 'video' as Kind, gif: undefined as DecodedGif | undefined, rate, dir, a, b, loopOn, duration })
   live.current = { ...live.current, kind: clip?.kind ?? 'video', gif: clip?.gif, rate, a, b, loopOn, duration }
-  const mirrorRef = useRef(mirror)
-  mirrorRef.current = mirror
 
   const lo = a ?? 0
   const hi = b ?? duration
@@ -127,22 +133,56 @@ export default function App() {
     c.getContext('2d')!.putImageData(g.frames[idx], 0, 0)
   }
 
+  /** Affiche l'image préparée pour cet instant par-dessus la vidéo. */
+  function showFrame(time: number): boolean {
+    const bmp = framesRef.current?.get(time)
+    const c = layerRef.current
+    if (!bmp || !c) return false
+    if (c.width !== bmp.width) c.width = bmp.width
+    if (c.height !== bmp.height) c.height = bmp.height
+    c.getContext('2d')!.drawImage(bmp, 0, 0)
+    hideOnSeeked.current = false
+    if (!layerOn.current) {
+      layerOn.current = true
+      c.style.visibility = 'visible'
+    }
+    return true
+  }
+
+  function hideLayer() {
+    hideOnSeeked.current = false
+    if (!layerOn.current) return
+    layerOn.current = false
+    if (layerRef.current) layerRef.current.style.visibility = 'hidden'
+  }
+
+  /** Amène la vraie vidéo à tRef, puis retire l'image préparée quand elle y est. */
+  function settleVideo() {
+    const v = videoRef.current
+    if (!v) return hideLayer()
+    pendingSeek.current = null
+    if (Math.abs(v.currentTime - tRef.current) > 1e-4) v.currentTime = tRef.current
+    if (v.seeking && layerOn.current) hideOnSeeked.current = true
+    else hideLayer()
+  }
+
   function seek(time: number) {
     const nt = clamp(time, 0, live.current.duration || 0)
     tRef.current = nt
-    if (live.current.kind === 'video') {
-      if (videoRef.current) videoRef.current.currentTime = nt
-    } else drawGif(nt)
+    if (live.current.kind === 'video') settleVideo()
+    else drawGif(nt)
     setT(nt)
   }
 
-  /** Déplacement continu (curseur ou glisser sur l'image) : on enchaîne les
-   *  recherches sans les empiler, pour que l'image suive le doigt. */
+  /** Déplacement continu (curseur ou glisser sur l'image) : image préparée si
+   *  possible, sinon on enchaîne les recherches sans les empiler. */
   function scrubTo(time: number) {
     const nt = clamp(time, 0, live.current.duration || 0)
     tRef.current = nt
     setT(nt)
     if (live.current.kind === 'gif') return drawGif(nt)
+    if (showFrame(nt)) return
+    hideLayer()
     const v = videoRef.current
     if (!v) return
     if (v.seeking) pendingSeek.current = nt
@@ -158,6 +198,11 @@ export default function App() {
   function scrubEnd() {
     scrubbingRef.current = false
     setScrubbing(false)
+    if (live.current.kind !== 'video') return
+    settleVideo()
+    // longue vidéo : préparer la zone où l'on travaille
+    const f = framesRef.current
+    if (f && f.to > f.from && !f.covers(tRef.current)) setFrameFocus(tRef.current)
   }
 
   function stopLoop() {
@@ -170,7 +215,8 @@ export default function App() {
     const v = videoRef.current
     if (live.current.kind === 'video' && v) {
       v.pause()
-      tRef.current = v.currentTime
+      if (live.current.dir === 1 && !layerOn.current) tRef.current = v.currentTime
+      else settleVideo()
     }
     setPlaying(false)
     setT(tRef.current)
@@ -206,7 +252,10 @@ export default function App() {
       }
       tRef.current = nt
       if (L.kind === 'video') {
-        if (v && !v.seeking) v.currentTime = nt
+        if (!showFrame(nt)) {
+          hideLayer()
+          if (v && !v.seeking) v.currentTime = nt
+        }
       } else drawGif(nt)
       setT(nt)
     }
@@ -229,6 +278,10 @@ export default function App() {
     const v = videoRef.current
     if (L.kind === 'video' && v) {
       if (d === 1) {
+        if (layerOn.current) {
+          hideLayer()
+          v.currentTime = tRef.current
+        }
         v.playbackRate = L.rate
         v.play().catch(() => {})
       } else v.pause()
@@ -305,6 +358,7 @@ export default function App() {
 
   async function importFile(file: File) {
     pause()
+    setFrameFocus(0)
     setMsg(null)
     const key = `${file.name}:${file.size}`
     const isGif = file.type === 'image/gif' || /\.gif$/i.test(file.name)
@@ -401,7 +455,8 @@ export default function App() {
 
   /** Détecte et dessine le squelette sur l'image affichée. */
   function runPose(): Pose | null {
-    const src = live.current.kind === 'gif' ? canvasRef.current : videoRef.current
+    const src =
+      live.current.kind === 'gif' ? canvasRef.current : layerOn.current ? layerRef.current : videoRef.current
     const ov = overlayRef.current
     const model = modelRef.current
     if (!src || !ov || !model) return null
@@ -414,7 +469,7 @@ export default function App() {
     poseRef.current = pose
     setPoseFound(!!pose)
     const ctx = ov.getContext('2d')!
-    if (pose) drawPose(ctx, pose, w, h, mirrorRef.current)
+    if (pose) drawPose(ctx, pose, w, h)
     else ctx.clearRect(0, 0, w, h)
     return pose
   }
@@ -455,7 +510,7 @@ export default function App() {
       ctx.scale(-1, 1)
     }
     ctx.drawImage(src, 0, 0, c.width, c.height)
-    // le squelette (son texte est déjà retourné en mode miroir)
+    // le squelette par-dessus
     if (poseOn && poseRef.current && overlayRef.current) ctx.drawImage(overlayRef.current, 0, 0, c.width, c.height)
     try {
       return c.toDataURL('image/jpeg', 0.8)
@@ -471,19 +526,16 @@ export default function App() {
     const v = videoRef.current
     if (clip.kind === 'video' && v?.seeking) await new Promise((r) => v.addEventListener('seeked', r, { once: true }))
     const time = tRef.current
-    let angles: Angles | null = null
     if (poseOn && modelRef.current) {
       try {
-        const pose = runPose()
-        const ov = overlayRef.current!
-        if (pose) angles = computeAngles(pose, ov.width, ov.height)
+        runPose()
       } catch {
         /* pas de squelette pour cette image */
       }
     }
     const thumb = snapshot()
     setSteps((s) =>
-      [...s.filter((x) => Math.abs(x.t - time) > 1e-3), { id: uid(), t: time, label: '', thumb, angles }].sort(
+      [...s.filter((x) => Math.abs(x.t - time) > 1e-3), { id: uid(), t: time, label: '', thumb }].sort(
         (x, y) => x.t - y.t,
       ),
     )
@@ -556,7 +608,8 @@ export default function App() {
       if (scrubbingRef.current) return
       const v = videoRef.current
       let key: string
-      if (live.current.kind === 'video') {
+      if (live.current.kind === 'video' && layerOn.current) key = 'L' + tRef.current.toFixed(4)
+      else if (live.current.kind === 'video') {
         if (!v || v.readyState < 2 || v.seeking) return
         key = v.currentTime.toFixed(4)
       } else key = 'g' + gifIdxRef.current
@@ -574,6 +627,33 @@ export default function App() {
     raf = requestAnimationFrame(loop)
     return () => cancelAnimationFrame(raf)
   }, [poseOn, poseStatus, clip, mirror])
+
+  // préparation des images pour le curseur fluide : la boucle A–B si elle
+  // existe, sinon toute la vidéo (ou ce qui tient en mémoire autour de l'endroit travaillé)
+  const fpsRef = useRef(fps)
+  fpsRef.current = fps
+  useEffect(() => {
+    if (clip?.kind !== 'video' || !clip.url || clip.tainted || !duration) return
+    const from = a ?? (b === null ? Math.max(0, Math.min(frameFocus - 1, duration)) : 0)
+    const to = b ?? duration
+    if (to - from < 0.05) return
+    let store: FrameStore | null = null
+    // petit délai : on ne relance pas tout pendant qu'on règle A et B
+    const id = setTimeout(() => {
+      store = new FrameStore(clip.url!, setFrameInfo)
+      framesRef.current = store
+      store.build(from, to, fpsRef.current).catch(() => {})
+    }, 600)
+    return () => {
+      clearTimeout(id)
+      if (store) {
+        if (framesRef.current === store) framesRef.current = null
+        store.dispose()
+      }
+      hideLayer()
+      setFrameInfo(null)
+    }
+  }, [clip, duration, a, b, frameFocus])
 
   // détection automatique des images/seconde pendant la lecture vidéo
   useEffect(() => {
@@ -735,10 +815,9 @@ export default function App() {
         return
       }
       if (d.active) {
-        const width = stageRef.current?.clientWidth || 300
-        // toute la largeur = la boucle A–B si elle existe, sinon 10 s max
-        const span = a !== null || b !== null ? hi - lo : Math.min(duration, 10)
-        scrubTo(d.t + ((mirror ? -dx : dx) / width) * span)
+        // réglage fin : une image tous les PX_PER_FRAME pixels
+        const rate = gif ? gif.frames.length / (duration || 1) : fps
+        scrubTo(d.t + (mirror ? -dx : dx) / (PX_PER_FRAME * rate))
       }
     }
   }
@@ -876,13 +955,14 @@ export default function App() {
                     if (next !== null) {
                       pendingSeek.current = null
                       e.currentTarget.currentTime = next
-                    }
+                    } else if (hideOnSeeked.current) hideLayer()
                   }}
                   onError={() => setMsg('Impossible de lire cette vidéo dans ce navigateur.')}
                 />
               ) : (
                 <canvas ref={canvasRef} className="media" style={{ transform }} />
               )}
+              {clip.kind === 'video' && <canvas ref={layerRef} className="media layer" style={{ transform }} />}
               {poseOn && <canvas ref={overlayRef} className="media overlay" style={{ transform }} />}
               {zoom > 1 && (
                 <button
@@ -914,6 +994,7 @@ export default function App() {
               b={b}
               steps={steps}
               pct={pct}
+              cached={frameInfo ? [frameInfo.from, frameInfo.upTo] : null}
               onScrubStart={scrubStart}
               onScrub={scrubTo}
               onScrubEnd={scrubEnd}
@@ -998,7 +1079,7 @@ export default function App() {
                 <button
                   className={`btn ${poseOn ? 'on' : ''}`}
                   onClick={togglePose}
-                  title="Squelette et angles des articulations (P)"
+                  title="Squelette (P)"
                 >
                   {poseStatus === 'loading' && poseOn ? 'Squelette…' : '◉ Squelette'}
                 </button>
@@ -1088,13 +1169,6 @@ export default function App() {
                             Supprimer
                           </button>
                         </div>
-                        {s.angles && (
-                          <div className="angles">
-                            {formatAngles(s.angles).map((line) => (
-                              <span key={line}>{line}</span>
-                            ))}
-                          </div>
-                        )}
                       </div>
                     </li>
                   )
@@ -1107,11 +1181,7 @@ export default function App() {
                 onClick={() =>
                   exportSheet(
                     clip.name,
-                    steps.map((s, i) => ({
-                      ...s,
-                      label: s.label || `Étape ${i + 1}`,
-                      lines: s.angles ? formatAngles(s.angles) : [],
-                    })),
+                    steps.map((s, i) => ({ ...s, label: s.label || `Étape ${i + 1}` })),
                   )
                 }
               >
@@ -1130,7 +1200,7 @@ export default function App() {
                 <dt>S</dt><dd>ajouter une étape</dd>
                 <dt>↑ ↓</dt><dd>étape précédente / suivante</dd>
                 <dt>M</dt><dd>miroir</dd>
-                <dt>P</dt><dd>squelette et angles</dd>
+                <dt>P</dt><dd>squelette</dd>
                 <dt>Molette</dt><dd>zoom</dd>
                 <dt>0</dt><dd>réinitialiser le zoom</dd>
                 <dt>Clic sur l’image</dt><dd>lecture / pause</dd>
@@ -1153,6 +1223,8 @@ function Timeline(props: {
   b: number | null
   steps: Step[]
   pct: (x: number) => number
+  /** zone dont les images sont prêtes (curseur fluide) */
+  cached: [number, number] | null
   onScrubStart: () => void
   onScrub: (t: number) => void
   onScrubEnd: () => void
@@ -1198,6 +1270,12 @@ function Timeline(props: {
       onPointerCancel={end}
     >
       <div className="track">
+        {props.cached && (
+          <div
+            className="cached"
+            style={{ left: `${pct(props.cached[0])}%`, width: `${Math.max(0, pct(props.cached[1]) - pct(props.cached[0]))}%` }}
+          />
+        )}
         {(a !== null || b !== null) && (
           <div className="loop-range" style={{ left: `${left}%`, width: `${Math.max(0, right - left)}%` }} />
         )}

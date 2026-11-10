@@ -67,44 +67,7 @@ export function detectPose(model: PoseLandmarker, src: CanvasImageSource, w: num
   return null
 }
 
-/* ---------- angles ---------- */
-
-export const JOINTS = [
-  { key: 'genou', label: 'Genou', l: [23, 25, 27], r: [24, 26, 28] },
-  { key: 'hanche', label: 'Hanche', l: [11, 23, 25], r: [12, 24, 26] },
-  { key: 'coude', label: 'Coude', l: [11, 13, 15], r: [12, 14, 16] },
-  { key: 'epaule', label: 'Épaule', l: [13, 11, 23], r: [14, 12, 24] },
-] as const
-
-export type Angles = Record<string, { l: number | null; r: number | null }>
-
 const MIN_VIS = 0.5
-
-/** Angle (en degrés) au point b, entre les segments b→a et b→c. */
-function angleAt(p: Pose, [a, b, c]: readonly number[], w: number, h: number): number | null {
-  const A = p[a]
-  const B = p[b]
-  const C = p[c]
-  if (!A || !B || !C || Math.min(A.v, B.v, C.v) < MIN_VIS) return null
-  const v1 = [(A.x - B.x) * w, (A.y - B.y) * h]
-  const v2 = [(C.x - B.x) * w, (C.y - B.y) * h]
-  const n = Math.hypot(...v1) * Math.hypot(...v2)
-  if (!n) return null
-  const cos = (v1[0] * v2[0] + v1[1] * v2[1]) / n
-  return Math.round((Math.acos(Math.max(-1, Math.min(1, cos))) * 180) / Math.PI)
-}
-
-export function computeAngles(p: Pose, w: number, h: number): Angles {
-  const out: Angles = {}
-  for (const j of JOINTS) out[j.key] = { l: angleAt(p, j.l, w, h), r: angleAt(p, j.r, w, h) }
-  return out
-}
-
-export function formatAngles(a: Angles): string[] {
-  return JOINTS.filter((j) => a[j.key]?.l != null || a[j.key]?.r != null).map(
-    (j) => `${j.label} G ${a[j.key].l ?? '–'}° · D ${a[j.key].r ?? '–'}°`,
-  )
-}
 
 /* ---------- dessin ---------- */
 
@@ -123,11 +86,8 @@ const BONES: [number, number][] = [
   [24, 26], [26, 28], [28, 30], [28, 32], [30, 32],
 ]
 
-/**
- * Dessine le squelette et les angles. `mirror` : la toile sera retournée en
- * CSS, on retourne donc le texte pour qu'il reste lisible.
- */
-export function drawPose(ctx: CanvasRenderingContext2D, p: Pose, w: number, h: number, mirror: boolean) {
+/** Dessine le squelette (os et articulations). */
+export function drawPose(ctx: CanvasRenderingContext2D, p: Pose, w: number, h: number) {
   ctx.clearRect(0, 0, w, h)
   const unit = Math.max(w, h) / 400
   const P = (i: number) => [p[i].x * w, p[i].y * h] as const
@@ -159,32 +119,5 @@ export function drawPose(ctx: CanvasRenderingContext2D, p: Pose, w: number, h: n
     ctx.arc(...P(i), Math.max(3, 3 * unit), 0, Math.PI * 2)
     ctx.fill()
     ctx.stroke()
-  }
-
-  // angles aux genoux, hanches, coudes, épaules
-  const angles = computeAngles(p, w, h)
-  const fs = Math.max(11, Math.round(9 * unit))
-  ctx.font = `700 ${fs}px system-ui, sans-serif`
-  ctx.textBaseline = 'middle'
-  for (const j of JOINTS) {
-    for (const side of ['l', 'r'] as const) {
-      const deg = angles[j.key][side]
-      if (deg == null) continue
-      const [x, y] = P(j[side][1])
-      const text = `${deg}°`
-      const tw = ctx.measureText(text).width
-      ctx.save()
-      ctx.translate(x, y)
-      if (mirror) ctx.scale(-1, 1)
-      // étiquette décalée à côté de l'articulation
-      const bx = 8 * unit
-      ctx.fillStyle = 'rgba(17,18,20,0.78)'
-      ctx.beginPath()
-      ctx.roundRect(bx - 3 * unit, -fs * 0.7, tw + 6 * unit, fs * 1.4, 3 * unit)
-      ctx.fill()
-      ctx.fillStyle = side === 'l' ? LEFT : RIGHT
-      ctx.fillText(text, bx, 0)
-      ctx.restore()
-    }
   }
 }
